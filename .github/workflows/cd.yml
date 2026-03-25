@@ -1,0 +1,94 @@
+name: CD — Deploy to Production
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+# Requires these GitHub Secrets:
+#   DEPLOY_SSH_KEY    — private key for your server
+#   DEPLOY_HOST       — server IP or hostname
+#   DEPLOY_USER       — SSH user (e.g. ubuntu)
+#   DEPLOY_PATH       — path on server (e.g. /srv/zivame)
+#   DOCKER_USERNAME   — Docker Hub username
+#   DOCKER_PASSWORD   — Docker Hub token
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/zivame-clone
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/zivame-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/zivame-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            # Pull latest images
+            docker compose pull
+
+            # Rolling restart (zero downtime)
+            docker compose up -d --no-deps --scale backend=2 backend
+            sleep 10
+            docker compose up -d --no-deps --scale backend=1 backend
+
+            # Run migrations
+            docker compose exec -T backend alembic upgrade head
+
+            # Restart other services
+            docker compose up -d celery_worker frontend
+
+            # Clean up old images
+            docker image prune -f
+
+            echo "Deploy complete at $(date)"
