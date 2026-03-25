@@ -4,6 +4,15 @@ A production-grade, scalable e-commerce platform inspired by Zivame, built with 
 
 ---
 
+## Screenshots
+
+!(./screenshots/1.png)
+!(./screenshots/2.png)
+!(./screenshots/3.png)
+!(./screenshots/4.png)
+
+### 
+
 ## Tech Stack
 
 ### Frontend
@@ -73,6 +82,8 @@ zivame-clone/
 │   ├── scraper/                 # Playwright-based product scraper
 │   ├── requirements.txt
 │   └── Dockerfile
+│
+├── screenshots
 │
 ├── docker-compose.yml
 ├── .env.example
